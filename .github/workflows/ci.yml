@@ -10,23 +10,34 @@ jobs:
         with:
           node-version: 20
 
+      # Ensure Chrome is available for Lighthouse
+      - uses: browser-actions/setup-chrome@v1
+
       # Install deps
       - run: npm install
       - run: npx playwright install --with-deps
 
-      # Run Playwright UI tests (server auto-starts from config)
+      # Run Playwright UI tests (starts http-server via config)
       - run: npm test
 
-      # Run Lighthouse via the official action (handles Chrome & uploads reports)
-      - name: Lighthouse CI
-        uses: treosh/lighthouse-ci-action@v10
-        with:
-          configPath: .lighthouserc.json
-          uploadArtifacts: true            # <- adds a Lighthouse artifact
-          temporaryPublicStorage: true      # <- prints a public report link
+      # Run Lighthouse CI against the local server and publish a public report link
+      - name: Run Lighthouse CI
+        run: |
+          npx lhci autorun \
+            --config=.lighthouserc.json \
+            --upload.target=temporary-public-storage
 
-      # Keep Playwright HTML report as an artifact
+      # Always upload artifacts, even if a step warns/fails
+      - name: Upload Lighthouse artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: .lighthouseci
+          if-no-files-found: warn
+
       - name: Upload Playwright report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
