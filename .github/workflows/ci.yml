@@ -4,26 +4,47 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install dependencies
-        run: npm install
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps
+      # Chrome for Lighthouse
+      - name: Setup Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
 
-      - name: Run UI tests (Playwright)
+      # Install project deps (Playwright, http-server, LHCI CLI are in package.json)
+      - name: Install dependencies
+        run: |
+          npm install
+          npx playwright install --with-deps
+
+      # UI tests (Playwright starts/stops a local server from playwright.config.js)
+      - name: Run Playwright tests
         run: npm test
 
+      # Lighthouse CI against local server defined in .lighthouserc.json
       - name: Run Lighthouse CI
-        uses: treosh/lighthouse-ci-action@v11
+        env:
+          LHCI_CHROMIUM_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          npx lhci autorun \
+            --config=.lighthouserc.json \
+            --collect.settings.chromeFlags="--no-sandbox" \
+            --upload.target=temporary-public-storage
+
+      # Artifacts
+      - name: Upload Lighthouse artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          configPath: .lighthouserc.json
-          uploadArtifacts: true            # adds Lighthouse artifact
-          temporaryPublicStorage: true      # prints public HTML report link
+          name: lighthouse-report
+          path: .lighthouseci
+          if-no-files-found: warn
 
       - name: Upload Playwright report
         if: always()
