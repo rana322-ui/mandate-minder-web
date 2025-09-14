@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Mandate Minder (Offline Lite)</title>
+<style>
+  :root{--bg:#0b1020;--card:#12172a;--ink:#e5e7eb;--muted:#9ca3af;--acc:#4f46e5;--br:14px}
+  *{box-sizing:border-box} body{margin:0;background:radial-gradient(1200px 800px at 75% 90%,#0e1326,transparent),var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
+  .wrap{max-width:1200px;margin:40px auto;padding:0 16px}
+  h1{font-size:22px;margin:0 0 16px}
+  .tabs{display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap}
+  .btn{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:var(--ink);padding:8px 12px;border-radius:12px;cursor:pointer}
+  .btn.primary{background:#1d4ed8;border-color:#1d4ed8}
+  .btn.danger{background:#7f1d1d;border-color:#7f1d1d}
+  .btn:disabled{opacity:.6;cursor:not-allowed}
+  .card{background:var(--card);border:1px solid rgba(255,255,255,.08);border-radius:var(--br);padding:16px;margin:0 0 16px}
+  input,select,textarea{width:100%;background:#0c1226;border:1px solid rgba(255,255,255,.12);color:var(--ink);padding:10px;border-radius:10px}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 6px}
+  table{width:100%;border-collapse:separate;border-spacing:0 8px}
+  th,td{padding:10px 12px;background:#0c1226;border-radius:8px}
+  th{background:transparent;color:#a5b4fc;text-align:left}
+  .row{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.08);font-size:12px}
+  .right{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .muted{color:var(--muted)}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:999px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Mandate Minder <span class="muted">— Offline Lite</span></h1>
+  <div class="tabs">
+    <button class="btn" data-tab="dash">Dashboard</button>
+    <button class="btn" data-tab="mandates">Mandates</button>
+    <button class="btn" data-tab="identities">Identities</button>
+    <button class="btn" data-tab="import">Import</button>
+    <button class="btn" data-tab="settings">Settings</button>
+  </div>
+  <div id="view"></div>
+</div>
+<script>
+const $ = s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const uid=()=>Math.random().toString(36).slice(2,10);
+const money=n=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(+n||0);
+const todayISO=()=>new Date().toISOString().slice(0,10);
+const KEY='mm_offline_v1';
+let state=(()=>{try{const r=localStorage.getItem(KEY);return r?JSON.parse(r):{mandates:[],identities:[]}}catch(e){return{mandates:[],identities:[]}}})();
+let tab='dash'; const setTab=t=>{tab=t;render()}; const setState=fn=>{state=fn(state);localStorage.setItem(KEY,JSON.stringify(state));render()};
+
+function detectAmount(s){const m=String(s).match(/(?:rs\.?|inr|₹)\s*([0-9][0-9,]*\.?\d*)/i);return m?+m[1].replace(/,/g,''):null}
+function detectNextDate(s){const m=String(s).match(/\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/);if(m){const [d,mn,y]=m[1].split(/[\/\-]/).map(x=>+x);const yyyy=y<100?2000+y:y;const dt=new Date(yyyy,mn-1,d);return dt.toISOString().slice(0,10)}return todayISO()}
+function detectMerchant(s){const c=String(s).toLowerCase();const map={'netflix':'Netflix','spotify':'Spotify','yt premium':'YouTube Premium','youtube':'YouTube','prime':'Amazon Prime Video'};for(const k in map){if(c.includes(k))return map[k]}const w=(s.match(/[A-Za-z][A-Za-z ]{2,20}/)||['Merchant'])[0];return w.trim()}
+function extractUPIs(s){const m=String(s).match(/\b[a-z0-9._-]{2,}@[a-z]{2,}\b/gi);return m?Array.from(new Set(m)):[]}
+function parseSmart(raw){const parts=String(raw).split(/\n{2,}|\r{2,}/);const out=[];for(const msg of parts){const amount=detectAmount(msg)||0;const nextDebit=detectNextDate(msg);const merchant=detectMerchant(msg);const vpas=extractUPIs(msg);out.push({id:uid(),merchant,amount,frequency:'MONTHLY',customDays:null,nextDebit,app:'UPI',notes:msg+(vpas.length?` | UPI: ${vpas.join(',')}`:''),active:true,identities:[]})}return out}
+
+function viewDash(){const next=[...state.mandates].filter(m=>m.active).sort((a,b)=>(a.nextDebit||'').localeCompare(b.nextDebit||'')).slice(0,5);return`
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+    <div><strong>Upcoming</strong> <span class="muted">(5 soonest)</span></div>
+    <div class="right">
+      <button class="btn" onclick="exportAllICS()">Export All ICS</button>
+      <button class="btn" onclick="exportJSON()">Export JSON</button>
+      <button class="btn" onclick="exportCSV()">Export CSV</button>
+    </div>
+  </div>
+  <div style="margin-top:12px;overflow:auto;">
+    <table><thead><tr><th>Merchant</th><th>Amount</th><th>Next date</th><th>App</th><th>Active</th></tr></thead>
+    <tbody>${next.map(m=>`<tr><td>${m.merchant}</td><td>${money(m.amount)}</td><td>${m.nextDebit||'-'}</td><td><span class="pill">${m.app||'-'}</span></td><td>${m.active?'✅':'⏸️'}</td></tr>`).join('')||`<tr><td colspan="5" class="muted">No mandates yet.</td></tr>`}</tbody></table>
+  </div>
+</div>`}
+function viewMandates(){const rows=state.mandates.map(m=>`<tr><td>${m.merchant}</td><td>${money(m.amount)}</td><td>${m.frequency==='CUSTOM_DAYS'?`Every ${m.customDays}d`:m.frequency}</td><td>${m.nextDebit||'-'}</td><td><span class="pill">${m.app||'-'}</span></td><td>${(m.identities||[]).length}</td><td class="right"><button class="btn" onclick="editMandate('${m.id}')">Edit</button><button class="btn" onclick="markProcessed('${m.id}')">Processed</button><button class="btn danger" onclick="delMandate('${m.id}')">Delete</button></td></tr>`).join('');return`
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+    <strong>Mandates</strong>
+    <div class="right"><button class="btn primary" onclick="openAdd()">Add mandate</button></div>
+  </div>
+  <div style="margin-top:12px;overflow:auto">
+    <table><thead><tr><th>Merchant</th><th>Amount</th><th>Frequency</th><th>Next date</th><th>App</th><th>IDs</th><th></th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="7" class="muted">Nothing yet.</td></tr>`}</tbody></table>
+  </div>
+</div>`}
+function viewIdentities(){const rows=state.identities.map(i=>`<tr><td><span class="pill">${i.type}</span></td><td>${i.label||'-'}</td><td>${i.value}</td><td class="right"><button class="btn" onclick="editIdt('${i.id}')">Edit</button><button class="btn danger" onclick="delIdt('${i.id}')">Delete</button></td></tr>`).join('');return`
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+    <strong>Identities</strong>
+    <div class="right"><button class="btn primary" onclick="openAddIdt()">Add identity</button></div>
+  </div>
+  <div style="margin-top:12px;overflow:auto">
+    <table><thead><tr><th>Type</th><th>Label</th><th>Value</th><th></th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="4" class="muted">Add your phone numbers / emails / UPI IDs here.</td></tr>`}</tbody></table>
+  </div>
+</div>`}
+function viewImport(){return`
+<div class="card">
+  <strong>Smart import (paste messages)</strong>
+  <label>Paste SMS/notifications</label>
+  <textarea id="smartText" rows="6" placeholder="Paste messages here..."></textarea>
+  <div class="right" style="margin-top:8px"><button class="btn primary" onclick="runSmart()">Parse & preview</button></div>
+  <div id="smartPreview" style="margin-top:12px"></div>
+</div>
+<div class="card">
+  <strong>Import from SMS Backup & Restore</strong>
+  <div class="row">
+    <div><label>Upload XML</label><input type="file" accept=".xml,application/xml" onchange="importXML(this)"/></div>
+    <div><label>Upload CSV</label><input type="file" accept=".csv,text/csv" onchange="importCSV(this)"/></div>
+  </div>
+</div>
+<div class="card">
+  <strong>Export</strong>
+  <div class="right">
+    <button class="btn" onclick="exportAllICS()">Export All ICS</button>
+    <button class="btn" onclick="exportJSON()">Export JSON</button>
+    <button class="btn" onclick="exportCSV()">Export CSV</button>
+    <button class="btn" onclick="openEncBackup()">Encrypted Backup</button>
+  </div>
+</div>`}
+function viewSettings(){return`<div class="card"><strong>Settings</strong><p class="muted">All data is stored locally in your browser. You can export encrypted backups.</p></div>`}
+
+function openAdd(){const m={id:uid(),merchant:'',amount:0,frequency:'MONTHLY',customDays:null,nextDebit:todayISO(),app:'',notes:'',active:true,identities:[]};openMandateForm(m,true)}
+function editMandate(id){const m=state.mandates.find(x=>x.id===id);if(!m)return;openMandateForm({...m},false)}
+function delMandate(id){if(!confirm('Delete mandate?'))return;setState(s=>({...s,mandates:s.mandates.filter(m=>m.id!==id)}))}
+function markProcessed(id){setState(s=>{const arr=s.mandates.map(m=>{if(m.id!==id)return m;const d=new Date(m.nextDebit||todayISO());let add=30;if(m.frequency==='WEEKLY')add=7;if(m.frequency==='MONTHLY')add=30;if(m.frequency==='QUARTERLY')add=91;if(m.frequency==='HALF_YEARLY')add=182;if(m.frequency==='YEARLY')add=365;if(m.frequency==='CUSTOM_DAYS')add=Math.max(1,+m.customDays||30);const nd=new Date(d.getTime()+add*86400000);return {...m,nextDebit:nd.toISOString().slice(0,10)}});return {...s,mandates:arr}})}
+
+function openMandateForm(m,isNew){const ids=state.identities;const root=document.createElement('div');root.className='card';root.innerHTML=`
+<div class="row3">
+  <div><label>Merchant</label><input id="mf_merchant" value="${m.merchant}"></div>
+  <div><label>Amount</label><input id="mf_amount" type="number" value="${m.amount}"></div>
+  <div><label>App</label><input id="mf_app" value="${m.app}"></div>
+  <div><label>Frequency</label><select id="mf_freq">${['WEEKLY','MONTHLY','QUARTERLY','HALF_YEARLY','YEARLY','CUSTOM_DAYS'].map(k=>`<option ${m.frequency===k?'selected':''} value="${k}">${k}</option>`).join('')}</select></div>
+  <div><label>Custom days</label><input id="mf_days" type="number" value="${m.customDays||''}" placeholder="e.g., 45"></div>
+  <div><label>Next debit</label><input id="mf_next" type="date" value="${m.nextDebit||todayISO()}"></div>
+  <div class="row" style="grid-column:1/-1"><div><label>Notes</label><input id="mf_notes" value="${m.notes||''}"></div><div><label>Active</label><select id="mf_active"><option value="1" ${m.active?'selected':''}>Active</option><option value="0" ${!m.active?'selected':''}>Inactive</option></select></div></div>
+  <div style="grid-column:1/-1"><label>Link identities</label><div>${ids.map(i=>`<label class="chip"><input type="checkbox" data-idt="${i.id}" ${m.identities.includes(i.id)?'checked':''}/> ${i.label||i.value}</label>`).join('')||'<div class="muted">No identities yet.</div>'}</div></div>
+  <div class="right" style="grid-column:1/-1;margin-top:6px"><button class="btn" id="mf_cancel">Cancel</button><button class="btn primary" id="mf_save">Save</button></div>
+</div>`;$('#view').prepend(root);$('#mf_cancel').onclick=render;$('#mf_save').onclick=()=>{const get=id=>root.querySelector('#'+id).value;const identities=ids.filter(i=>root.querySelector('input[data-idt="'+i.id+'"]')?.checked).map(i=>i.id);const rec={...m,merchant:get('mf_merchant').trim()||'Unknown',amount:+get('mf_amount')||0,app:get('mf_app').trim(),frequency:get('mf_freq'),customDays:get('mf_days')?+get('mf_days'):null,nextDebit:get('mf_next')||todayISO(),notes:get('mf_notes'),active:get('mf_active')==='1',identities};setState(s=>{const ix=s.mandates.findIndex(x=>x.id===m.id);if(ix>=0)s.mandates[ix]=rec;else s.mandates.unshift(rec);return {...s}})}}
+function openAddIdt(){const it={id:uid(),type:'phone',label:'',value:''};const root=document.createElement('div');root.className='card';root.innerHTML=`
+<div class="row3">
+  <div><label>Type</label><select id="it_type"><option>phone</option><option>email</option><option>upi</option><option>other</option></select></div>
+  <div><label>Label</label><input id="it_label" placeholder="e.g., SIM-1"></div>
+  <div><label>Value</label><input id="it_value" placeholder="+91... or name@bank"></div>
+  <div class="right" style="grid-column:1/-1;margin-top:6px"><button class="btn" id="it_cancel">Cancel</button><button class="btn primary" id="it_save">Save</button></div>
+</div>`;$('#view').prepend(root);$('#it_cancel').onclick=render;$('#it_save').onclick=()=>{const rec={id:uid(),type:$('#it_type').value,label:$('#it_label').value.trim(),value:$('#it_value').value.trim()};if(!rec.value)return alert('Value required');setState(s=>({...s,identities:[rec,...s.identities]}))}}
+function editIdt(id){const it=state.identities.find(x=>x.id===id);if(!it)return;const root=document.createElement('div');root.className='card';root.innerHTML=`
+<div class="row3">
+  <div><label>Type</label><select id="it_type"><option ${it.type==='phone'?'selected':''}>phone</option><option ${it.type==='email'?'selected':''}>email</option><option ${it.type==='upi'?'selected':''}>upi</option><option ${it.type==='other'?'selected':''}>other</option></select></div>
+  <div><label>Label</label><input id="it_label" value="${it.label||''}"></div>
+  <div><label>Value</label><input id="it_value" value="${it.value}"></div>
+  <div class="right" style="grid-column:1/-1;margin-top:6px"><button class="btn" id="it_cancel">Cancel</button><button class="btn primary" id="it_save">Save</button></div>
+</div>`;$('#view').prepend(root);$('#it_cancel').onclick=render;$('#it_save').onclick=()=>{const rec={id,type:$('#it_type').value,label:$('#it_label').value.trim(),value:$('#it_value').value.trim()};if(!rec.value)return alert('Value required');setState(s=>{const ix=s.identities.findIndex(x=>x.id===id);s.identities[ix]=rec;return {...s}})}}
+function delIdt(id){if(!confirm('Delete identity?'))return;setState(s=>({...s,identities:s.identities.filter(i=>i.id!==id),mandates:s.mandates.map(m=>({...m,identities:(m.identities||[]).filter(x=>x!==id)}))}))}
+
+function runSmart(){const txt=$('#smartText').value;const items=parseSmart(txt);const el=$('#smartPreview');if(items.length===0){el.innerHTML='<div class="muted">No items detected.</div>';return}el.innerHTML=`<div class="right" style="margin-bottom:8px"><button class="btn primary" onclick="addPreview()">Add ${items.length} to mandates</button></div><table><thead><tr><th>Merchant</th><th>Amount</th><th>Next</th><th>Excerpt</th></tr></thead><tbody>${items.map(i=>`<tr><td>${i.merchant}</td><td>${money(i.amount)}</td><td>${i.nextDebit}</td><td class="muted">${(i.notes||'').slice(0,80)}</td></tr>`).join('')}</tbody></table>`;window._preview=items}
+function addPreview(){const items=window._preview||[];if(!items.length)return;setState(s=>({...s,mandates:[...items,...s.mandates]}));$('#smartPreview').innerHTML='<div>Added.</div>'}
+function importXML(inp){const f=inp.files&&inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const text=String(r.result||'');const doc=new DOMParser().parseFromString(text,'application/xml');const nodes=Array.from(doc.getElementsByTagName('sms'));const bodies=nodes.map(n=>n.getAttribute('body')||'').filter(Boolean);$('#smartText').value=bodies.join('\n\n');runSmart()};r.readAsText(f);inp.value=''}
+function importCSV(inp){const f=inp.files&&inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const text=String(r.result||'');const lines=text.split(/\r?\n/);const header=lines.shift()||'';const idx=header.split(',').findIndex(h=>/body|message|text/i.test(h));const bodies=lines.map(line=>{const cols=line.split(',');return idx>=0?(cols[idx]||''):line});$('#smartText').value=bodies.join('\n\n');runSmart()};r.readAsText(f);inp.value=''}
+function exportJSON(){const blob=new Blob([JSON.stringify(state)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='mandate_minder.json';a.click()}
+function exportCSV(){const rows=[['merchant','amount','frequency','customDays','nextDebit','app','notes','active']].concat(state.mandates.map(m=>[m.merchant,m.amount,m.frequency,m.customDays||'',m.nextDebit||'',m.app||'',(m.notes||'').replace(/\n/g,' '),m.active?1:0]));const csv=rows.map(r=>r.map(x=>String(x).includes(',')?`\"${String(x).replace(/\"/g,'\"\"')}\"`:String(x)).join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='mandates.csv';a.click()}
+function exportAllICS(){function d(d0){const dt=new Date(d0+'T00:00:00');const y=dt.getUTCFullYear(),m=('0'+(dt.getUTCMonth()+1)).slice(-2),da=('0'+dt.getUTCDate()).slice(-2);return `${y}${m}${da}`}const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//MandateMinder//EN'];for(const m of state.mandates){if(!m.active)continue;const start=d(m.nextDebit||todayISO()),end=start;const title=`Mandate: ${m.merchant} (${money(m.amount)})`;lines.push('BEGIN:VEVENT');lines.push('SUMMARY:'+title.replace(/[,;]/g,' '));lines.push('DTSTART;VALUE=DATE:'+start);lines.push('DTEND;VALUE=DATE:'+end);if(m.frequency==='WEEKLY')lines.push('RRULE:FREQ=WEEKLY');if(m.frequency==='MONTHLY')lines.push('RRULE:FREQ=MONTHLY');if(m.frequency==='QUARTERLY')lines.push('RRULE:FREQ=MONTHLY;INTERVAL=3');if(m.frequency==='HALF_YEARLY')lines.push('RRULE:FREQ=MONTHLY;INTERVAL=6');if(m.frequency==='YEARLY')lines.push('RRULE:FREQ=YEARLY');lines.push('END:VEVENT')}lines.push('END:VCALENDAR');const blob=new Blob([lines.join('\n')],{type:'text/calendar'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='mandates.ics';a.click()}
+async function encBackup(){const pwd=prompt('Password for backup (remember it!)');if(!pwd||pwd.length<6)return alert('Min 6 chars.');const enc=new TextEncoder();const salt=crypto.getRandomValues(new Uint8Array(16));const iv=crypto.getRandomValues(new Uint8Array(12));const km=await crypto.subtle.importKey('raw',enc.encode(pwd),'PBKDF2',false,['deriveKey']);const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:150000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);const pt=enc.encode(JSON.stringify(state));const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,pt));const blob=new Blob([salt,iv,ct],{type:'application/octet-stream'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='mandate_backup.bin';a.click()}
+async function encRestore(file){const pwd=prompt('Enter backup password');if(!pwd)return;const buf=new Uint8Array(await file.arrayBuffer());const salt=buf.slice(0,16),iv=buf.slice(16,28),ct=buf.slice(28);const enc=new TextEncoder();const km=await crypto.subtle.importKey('raw',enc.encode(pwd),'PBKDF2',false,['deriveKey']);const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:150000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct);const obj=JSON.parse(new TextDecoder().decode(pt));state=obj;localStorage.setItem(KEY,JSON.stringify(state));render()}
+function openEncBackup(){const div=document.createElement('div');div.className='card';div.innerHTML=`<div class="right"><button class="btn" onclick="encBackup()">Create Encrypted Backup</button><label class="btn">Restore<input id="encFile" type="file" style="display:none"/></label><button class="btn" onclick="this.closest('.card').remove()">Close</button></div>`;$('#view').prepend(div);div.querySelector('#encFile').onchange=e=>{const f=e.target.files[0];if(f)encRestore(f)}}
+
+function render(){$$('.tabs .btn').forEach(b=>b.classList.toggle('primary',b.dataset.tab===tab));const v=$('#view');if(tab==='dash')v.innerHTML=viewDash();if(tab==='mandates')v.innerHTML=viewMandates();if(tab==='identities')v.innerHTML=viewIdentities();if(tab==='import')v.innerHTML=viewImport();if(tab==='settings')v.innerHTML=viewSettings()}
+$$('.tabs .btn').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));render();
+</script>
+</body>
+</html>

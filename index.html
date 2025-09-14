@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b1020">
+<title>Mandate Minder — PWA</title>
+<link rel="icon" href="icons/icon-192.png">
+<style>body{margin:0;background:#0b1020;color:#e5e7eb;font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto} .wrap{max-width:1200px;margin:40px auto;padding:0 16px}</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Mandate Minder — PWA</h1>
+  <p>This is the full web build with a Service Worker (offline caching) and manifest (Add to Home Screen).</p>
+  <p><strong>App UI:</strong></p>
+  <iframe src="app.html" style="width:100%;height:70vh;border:1px solid #1f2937;border-radius:12px;background:#12172a"></iframe>
+</div>
+<script>
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js');}
+</script>
+</body>
+</html>
