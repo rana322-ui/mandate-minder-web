@@ -1,0 +1,14 @@
+{
+  "name": "mandate-minder-web",
+  "private": true,
+  "scripts": {
+    "dev": "http-server . -p 4173 -c-1",
+    "test": "playwright test",
+    "lhci": "lhci autorun"
+  },
+  "devDependencies": {
+    "@lhci/cli": "^0.12.0",
+    "@playwright/test": "^1.46.0",
+    "http-server": "^14.1.1"
+  }
+}
