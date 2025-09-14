@@ -9,17 +9,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      # Install deps
       - run: npm install
       - run: npx playwright install --with-deps
+
+      # Run Playwright UI tests (server auto-starts from config)
       - run: npm test
-      - run: npx lhci autorun
+
+      # Run Lighthouse via the official action (handles Chrome & uploads reports)
+      - name: Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v10
+        with:
+          configPath: .lighthouserc.json
+          uploadArtifacts: true            # <- adds a Lighthouse artifact
+          temporaryPublicStorage: true      # <- prints a public report link
+
+      # Keep Playwright HTML report as an artifact
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
           path: playwright-report
-      - name: Upload Lighthouse results
-        uses: actions/upload-artifact@v4
-        with:
-          name: lighthouse-report
-          path: .lighthouseci
